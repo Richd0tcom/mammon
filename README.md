@@ -1,98 +1,218 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Mammon | FX Trading System Architecture
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+## Overview
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Mammon is a scalable currency trading application designed to handle multi-currency wallets, real-time conversions, and trading between Naira (NGN) and other international currencies. The system employs a distributed architecture with specialized services to ensure high performance, reliability, and real-time updates.
 
-## Description
+## System Architecture
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+The architecture follows a microservices approach with several key components:
 
-## Project setup
+### User-Facing Layer
+- **Load Balancer (Pricing Service)**: Routes user requests to the appropriate server instance using consistent hashing based on user ID
+- **Multi-Instance User Servers**: Maintain user connections and handle authentication, ensuring users connect to only one server instance regardless of device count
+- **WebSocket Connections**: Established after initial HTTP connection for real-time updates
 
-```bash
-$ npm install
+### Core Services
+- **Order Service**: Processes trading requests and manages the order lifecycle
+- **Exchange Order Gateways**: Interface with external exchanges for order execution
+- **Database Layer**:
+  - **Orders DB**: Stores order information indexed by order ID
+  - **Orders-Exchange Mapping DB**: Maps internal order IDs to exchange-specific order IDs
+
+### Exchange Integration
+- **Exchange Publishers**: Push market data and order updates
+- **Exchange Shards**: Handle order routing and execution
+- **Stream Consumer**: Processes real-time data streams from exchanges
+- **Cold Storage**: Archives completed positions
+
+## Data Flow
+
+1. **User Connection**: 
+   - User connects through the load balancer
+   - Load balancer assigns the user to a specific server instance using consistent hashing
+   - WebSocket connection established for real-time updates
+
+2. **Order Placement**:
+   - User initiates order through the user server
+   - Order is routed to the Order Service
+   - Order is recorded in Orders DB and sent to Exchange via Order Gateway
+   - Exchange returns an order ID which is mapped to internal order ID
+
+3. **Real-time Updates**:
+   - Exchange publishers push updates to the stream consumer
+   - Updates are processed and forwarded to relevant user servers
+   - User servers broadcast updates to connected clients
+
+4. **Order Execution**:
+   - Executed orders are updated in the Orders DB
+   - Wallet balances are updated
+   - Transaction records are created
+
+## Key Design Considerations & Tradeoffs
+
+### Consistent Hashing for User Connections
+- **Benefit**: Ensures a user connects to only one server instance, reducing state synchronization issues
+- **Tradeoff**: May lead to uneven load distribution if many active users hash to the same server
+
+### Separate Databases for Orders and Exchange Mapping
+- **Benefit**: Decouples internal order management from exchange-specific details
+- **Tradeoff**: Introduces complexity in data synchronization and additional query overhead
+
+### WebSocket for Real-time Updates
+- **Benefit**: Low-latency updates for market data and order status
+- **Tradeoff**: Requires maintaining persistent connections which can consume server resources
+
+### Cold Storage for Positions
+- **Benefit**: Optimizes performance by moving completed positions to archival storage
+- **Tradeoff**: Introduces complexity in data retrieval for historical analysis
+
+## Scalability Considerations
+
+- **Horizontal Scaling**: Multiple instances of user servers can be added as user base grows
+- **Database Sharding**: Order data can be sharded based on user ID or time periods
+- **Multiple Exchange Connections**: System can connect to multiple exchanges through specialized gateways
+- **Publisher Redundancy**: Multiple publisher instances ensure reliability of market data
+
+## Future Enhancements
+
+- **Real-time Risk Management**: Add real-time position monitoring and risk control
+- **Machine Learning for Pricing**: Implement predictive models for better rate offerings
+- **Cross-exchange Arbitrage**: Automatic detection and execution of arbitrage opportunities
+- **Enhanced Analytics**: Real-time dashboards for user trading patterns and system performance
+
+## Technology Stack
+
+- **Backend Framework**: NestJS
+- **Database**: PostgreSQL (for transactional data), Time-series DB (for market data)
+- **Messaging**: Kafka/RabbitMQ for event-driven communication
+- **Caching**: Redis for rate caching and session management
+- **WebSockets**: Socket.io for real-time client-server communication
+- **Authentication**: JWT with refresh token rotation
+- **Monitoring**: Prometheus and Grafana for system metrics
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js (v14 or higher)
+- PostgreSQL (v12 or higher)
+- Redis
+- Kafka/RabbitMQ
+
+### Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/mammon-fx-trading.git
+   cd mammon-fx-trading
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Create environment file:
+   ```bash
+   cp .env.example .env.development
+   ```
+
+4. Update the environment variables in `.env.development` with your configuration
+
+5. Start the development server:
+   ```bash
+   npm run start:dev
+   ```
+
+### Configuration
+
+The system requires several environment variables to be set:
+
+```
+# Application
+NODE_ENV=development
+PORT=3000
+APP_NAME=Mammon FX Trading
+
+# Database
+DB_HOST=localhost
+DB_PORT=5432
+DB_USERNAME=postgres
+DB_PASSWORD=postgres
+DB_NAME=mammon_fx
+DB_SYNC=true
+DB_LOGGING=true
+
+# Redis
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+# Messaging
+KAFKA_BROKERS=localhost:9092
+KAFKA_GROUP_ID=mammon-fx
+
+# JWT Authentication
+JWT_SECRET=your_jwt_secret_key
+JWT_EXPIRATION=1h
+JWT_REFRESH_EXPIRATION=7d
+
+# External Exchange API
+EXCHANGE_API_URL=https://api.exchange.com
+EXCHANGE_API_KEY=your_api_key
+EXCHANGE_API_SECRET=your_api_secret
+
+# Rate Limiting
+THROTTLE_TTL=60
+THROTTLE_LIMIT=10
 ```
 
-## Compile and run the project
+## Development
 
-```bash
-# development
-$ npm run start
+### Project Structure
 
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+```
+src/
+├── common/         # Shared utilities, decorators, filters
+├── config/         # Configuration modules
+├── modules/
+│   ├── auth/       # Authentication and authorization
+│   ├── users/      # User management
+│   ├── wallets/    # Multi-currency wallet management
+│   ├── orders/     # Order processing and management
+│   ├── exchange/   # Exchange integration
+│   └── pricing/    # Real-time pricing service
+├── app.module.ts
+└── main.ts
 ```
 
-## Run tests
+### API Documentation
+
+API documentation is available at `/api/docs` when running the application in development mode.
+
+## Testing
 
 ```bash
-# unit tests
-$ npm run test
+# Unit tests
+npm run test
 
-# e2e tests
-$ npm run test:e2e
+# E2E tests
+npm run test:e2e
 
-# test coverage
-$ npm run test:cov
+# Test coverage
+npm run test:cov
 ```
 
 ## Deployment
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+The application is containerized and can be deployed using Docker:
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+# Build the Docker image
+docker build -t mammon-fx .
+
+# Run the container
+docker run -p 3000:3000 --env-file .env.production mammon-fx
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+For production deployment, consider using Docker Compose or Kubernetes to orchestrate the various services.

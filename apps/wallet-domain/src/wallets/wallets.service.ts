@@ -5,9 +5,17 @@ import { Repository, Transaction, DataSource } from "typeorm";
 import { Wallet } from "./entities/wallet.entity";
 import { TransactionEntry } from "../transactions/entities/tx-entry";
 import { Transaction as WalletTransaction} from "../transactions/entities/transaction.entity";
+import { ConvertCurrencyDto, FundWalletDto, TradeDto } from "./dto/create-wallet.dto";
+import { v4 as uuidv4 } from 'uuid';
+
+enum Txtype {
+
+}
 
 @Injectable()
 export class WalletService {
+
+  private readonly COMPANY_WALLET = ""
   constructor(
     @InjectRepository(Wallet)
     private readonly walletAccountRepository: Repository<Wallet>,
@@ -134,23 +142,7 @@ export class WalletService {
   async convertCurrency(userId: string, convertDto: ConvertCurrencyDto): Promise<any> {
     const { fromCurrency, toCurrency, amount, reference } = convertDto;
     
-    if (fromCurrency === toCurrency) {
-      throw new BadRequestException('Cannot convert to the same currency');
-    }
-    
-    // Check for idempotency
-    if (reference) {
-      const existingTransaction = await this.transactionRepository.findOne({
-        where: { reference, userId, type: 'CONVERSION' },
-      });
-      
-      if (existingTransaction) {
-        return {
-          message: 'Transaction already processed',
-          transactionId: existingTransaction.id,
-        };
-      }
-    }
+
     
     // Begin transaction
     const queryRunner = this.dataSource.createQueryRunner();
@@ -231,6 +223,7 @@ export class WalletService {
         sourceBalance: sourceWallet.balance,
         destinationBalance: destWallet.balance,
       };
+
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -239,130 +232,120 @@ export class WalletService {
     }
   }
 
-  async trade(userId: string, tradeDto: TradeDto): Promise<any> {
+  async processTx(userId: string, tradeDto: TradeDto, rate: number): Promise<any> {
+
     const { fromCurrency, toCurrency, amount, reference } = tradeDto;
-    
-    // Trading is essentially a specialized form of conversion
-    // with potentially different business rules or fee structures
-    
-    if (fromCurrency === toCurrency) {
-      throw new BadRequestException('Cannot trade the same currency');
-    }
-    
-    // Check for idempotency
-    if (reference) {
-      const existingTransaction = await this.transactionRepository.findOne({
-        where: { reference, userId, type: 'TRADE' },
-      });
-      
-      if (existingTransaction) {
-        return {
-          message: 'Transaction already processed',
-          transactionId: existingTransaction.id,
-        };
-      }
-    }
-    
-    // Begin transaction
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-    
-    try {
-      // Get source wallet account
-      const sourceWallet = await this.getWalletAccountByCurrency(userId, fromCurrency);
-      
-      // Check if source wallet has sufficient funds
-      if (Number(sourceWallet.balance) < Number(amount)) {
-        throw new BadRequestException(`Insufficient ${fromCurrency} balance`);
-      }
-      
-      // Get or create destination wallet account
-      const destWallet = await this.getWalletAccountByCurrency(userId, toCurrency);
-      
-      // Get exchange rate - might have different rate source for trades vs conversions
-      const rate = await this.fxService.getExchangeRate(fromCurrency, toCurrency);
-      
-      // Calculate trading fee (if applicable)
-      const tradingFeePercentage = 0.5; // 0.5% fee
-      const tradingFee = (Number(amount) * tradingFeePercentage) / 100;
-      
-      // Calculate converted amount after fee
-      const amountAfterFee = Number(amount) - tradingFee;
-      const convertedAmount = amountAfterFee * rate;
-      
-      // Create transaction record
-      const transaction = this.transactionRepository.create({
-        userId,
-        type: 'TRADE',
-        reference: reference || uuidv4(),
-        status: 'COMPLETED',
-        metadata: JSON.stringify({
-          fromCurrency,
-          toCurrency,
-          amount,
-          tradingFee,
-          amountAfterFee,
-          convertedAmount,
-          rate,
-        }),
-      });
-      
-      const savedTransaction = await queryRunner.manager.save(transaction);
-      
-      // Create debit entry (from source wallet)
-      const debitEntry = this.transactionEntryRepository.create({
-        transactionId: savedTransaction.id,
-        walletAccountId: sourceWallet.id,
-        currency: fromCurrency,
-        amount: -amount, // Negative for debit
-      });
-      
-      await queryRunner.manager.save(debitEntry);
-      
-      // Create fee entry (if using a fee wallet)
-      if (tradingFee > 0) {
-        // In a real system, fees might go to a company fee wallet
-        // For simplicity, we're just recording the fee in this transaction
-      }
-      
-      // Create credit entry (to destination wallet)
-      const creditEntry = this.transactionEntryRepository.create({
-        transactionId: savedTransaction.id,
-        walletAccountId: destWallet.id,
-        currency: toCurrency,
-        amount: convertedAmount, // Positive for credit
-        exchangeRate: rate,
-      });
-      
-      await queryRunner.manager.save(creditEntry);
-      
-      // Update wallet balances
-      sourceWallet.balance = Number(sourceWallet.balance) - Number(amount);
-      destWallet.balance = Number(destWallet.balance) + Number(convertedAmount);
-      
-      await queryRunner.manager.save(sourceWallet);
-      await queryRunner.manager.save(destWallet);
-      
-      await queryRunner.commitTransaction();
-      
-      return {
-        message: 'Trade completed successfully',
-        transactionId: savedTransaction.id,
-        fromCurrency,
-        fromAmount: amount,
-        tradingFee,
-        toCurrency,
-        toAmount: convertedAmount,
-        rate,
-        sourceBalance: sourceWallet.balance,
-        destinationBalance: destWallet.balance,
-      };
-    } catch (error) {
-      await queryRunner.rollbackTransaction();
-      throw error;
-    } finally {
-      await queryRunner.release();
-    }
+
+        // Begin transaction
+        const queryRunner = this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction("SERIALIZABLE");
+        
+        try {
+          // Get source wallet account
+          const sourceWallet = await this.getWalletAccountByCurrency(userId, fromCurrency);
+          
+          // Check if source wallet has sufficient funds
+          if (Number(sourceWallet.balance) < Number(tradeDto.amount)) {
+            throw new BadRequestException(`Insufficient ${fromCurrency} balance`);
+          }
+          
+          // Get or create destination wallet account
+          const destWallet = await this.getWalletAccountByCurrency(this.COMPANY_WALLET, toCurrency);
+          
+          // Get exchange rate (will be sent in data from fx microservice)
+
+          
+          // Calculate trading fee (if applicable)
+          const tradingFeePercentage = 0.5; // 0.5% fee
+          const tradingFee = (Number(amount) * tradingFeePercentage) / 100;
+          
+          // Calculate converted amount after fee
+          const amountAfterFee = Number(amount) - tradingFee;
+          const convertedAmount = amountAfterFee * rate;
+          
+          // Create transaction record
+          const transaction = this.transactionRepository.create({
+            userId,
+            type: 'TRADE',
+            reference: reference || uuidv4(),
+            status: 'COMPLETED',
+            metadata: JSON.stringify({
+              fromCurrency,
+              toCurrency,
+              amount,
+              tradingFee,
+              amountAfterFee,
+              convertedAmount,
+              rate,
+            }),
+          });
+          
+          const savedTransaction = await queryRunner.manager.save(transaction);
+          
+          // Create debit entry (from source wallet)
+          const debitEntry = this.transactionEntryRepository.create({
+            transactionId: savedTransaction.id,
+            walletAccountId: sourceWallet.id,
+            currency: fromCurrency,
+            amount: -amount, // Negative for debit
+          });
+          
+          await queryRunner.manager.save(debitEntry);
+          
+          // Create fee entry (if using a fee wallet)
+          if (tradingFee > 0) {
+            // In a real system, fees might go to a company fee wallet
+            // For simplicity, we're just recording the fee in this transaction
+
+            // Create credit entry (to destination wallet)
+          const feeCreditEntry = this.transactionEntryRepository.create({
+            transactionId: savedTransaction.id,
+            walletAccountId: destWallet.id,
+            currency: toCurrency,
+            amount: convertedAmount, // Positive for credit
+            exchangeRate: rate,
+          });
+          await queryRunner.manager.save(feeCreditEntry);
+          }
+          
+          // Create credit entry (to destination wallet)
+          const creditEntry = this.transactionEntryRepository.create({
+            transactionId: savedTransaction.id,
+            walletAccountId: destWallet.id,
+            currency: toCurrency,
+            amount: convertedAmount, // Positive for credit
+            exchangeRate: rate,
+          });
+          
+          await queryRunner.manager.save(creditEntry);
+          
+          // Update wallet balances
+          sourceWallet.balance = Number(sourceWallet.balance) - Number(amount);
+          destWallet.balance = Number(destWallet.balance) + Number(convertedAmount);
+          
+          await queryRunner.manager.save(sourceWallet);
+          await queryRunner.manager.save(destWallet);
+          
+          await queryRunner.commitTransaction();
+        
+          return {
+            message: 'Trade completed successfully',
+            transactionId: savedTransaction.id,
+            fromCurrency,
+            fromAmount: amount,
+            tradingFee,
+            toCurrency,
+            toAmount: convertedAmount,
+            rate,
+            sourceBalance: sourceWallet.balance,
+            destinationBalance: destWallet.balance,
+          };
+        } catch (error) {
+          await queryRunner.rollbackTransaction();
+          throw error;
+        } finally {
+          await queryRunner.release();
+        }
   }
 }

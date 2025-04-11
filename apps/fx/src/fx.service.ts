@@ -1,12 +1,14 @@
 // fx.service.ts
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, BadRequestException, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { catchError, firstValueFrom } from 'rxjs';
 import { AxiosError } from 'axios';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { TradeDto } from './dto';
+import { ClientProxy } from '@nestjs/microservices';
 
 @Injectable()
 export class FxService {
@@ -18,6 +20,8 @@ export class FxService {
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    private readonly dataSource: DataSource,
+    @Inject("WALLETS_CLIENT") private walletsClient: ClientProxy
   ) {
     // Initialize rates on service start
     this.updateAllRates();
@@ -120,5 +124,56 @@ export class FxService {
       convertedAmount,
       rate,
     };
+  }
+
+  async trade(userId: string, tradeDto: TradeDto): Promise<any> {
+    const { fromCurrency, toCurrency, amount, reference } = tradeDto;
+    
+    // Trading is essentially a specialized form of conversion
+    // with potentially different business rules or fee structures
+    
+    if (fromCurrency === toCurrency) {
+      throw new BadRequestException('Cannot trade the same currency');
+    }
+    
+    // Check for idempotency
+    //talk to transaction microservice
+    this.walletsClient.send('checkRef', {})
+
+
+
+    // if (reference) {
+    //   const existingTransaction = await this.transactionRepository.findOne({
+    //     where: { reference, userId, type: 'TRADE' },
+    //   });
+      
+    //   if (existingTransaction) {
+    //     return {
+    //       message: 'Transaction already processed',
+    //       transactionId: existingTransaction.id,
+    //     };
+    //   }
+    // }
+    
+    //talk to wallet microservice
+    this.walletsClient.send('sendTx', {})
+
+    // return {
+    //   message: 'Trade completed successfully',
+    //   transactionId: savedTransaction.id,
+    //   fromCurrency,
+    //   fromAmount: amount,
+    //   tradingFee,
+    //   toCurrency,
+    //   toAmount: convertedAmount,
+    //   rate,
+    //   sourceBalance: sourceWallet.balance,
+    //   destinationBalance: destWallet.balance,
+    // };
+
+    return {
+      success: true
+    }
+
   }
 }
