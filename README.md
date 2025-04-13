@@ -1,8 +1,8 @@
-# Mammon | FX Trading System Architecture
+# Mammon | FX Trading System Design/Architecture
 
 ## Overview
 
-Mammon is a scalable currency trading application designed to handle multi-currency wallets, real-time conversions, and trading between Naira (NGN) and other international currencies. The system employs a distributed architecture with specialized services to ensure high performance, reliability, and real-time updates.
+Mammon is a system design implementation of a scalable currency trading application designed to handle multi-currency wallets, real-time conversions, and trading between Naira (NGN) and other international currencies. The system employs a distributed architecture with specialized services to ensure high performance, reliability, and real-time updates.
 
 ## System Architecture
 
@@ -27,6 +27,10 @@ The architecture follows a microservices approach with several key components:
 - **Cold Storage**: Archives completed positions
 
 ## Data Flow
+
+![fx-trading-app](https://github.com/user-attachments/assets/dadac659-2769-411a-acb2-eeab7b90fdc6)
+
+
 
 1. **User Connection**: 
    - User connects through the load balancer
