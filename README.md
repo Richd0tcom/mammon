@@ -84,12 +84,11 @@ The architecture follows a microservices approach with several key components:
 ## Technology Stack
 
 - **Backend Framework**: NestJS
-- **Database**: PostgreSQL (for transactional data), Time-series DB (for market data)
-- **Messaging**: Kafka/RabbitMQ for event-driven communication
+- **Database**: PostgreSQL (for transactional data)
+- **Messaging**: Kafka for event-driven communication
 - **Caching**: Redis for rate caching and session management
 - **WebSockets**: Socket.io for real-time client-server communication
 - **Authentication**: JWT with refresh token rotation
-- **Monitoring**: Prometheus and Grafana for system metrics
 
 ## Getting Started
 
@@ -98,14 +97,14 @@ The architecture follows a microservices approach with several key components:
 - Node.js (v14 or higher)
 - PostgreSQL (v12 or higher)
 - Redis
-- Kafka/RabbitMQ
+- Kafka
 
 ### Installation
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/mammon-fx-trading.git
-   cd mammon-fx-trading
+   git clone https://github.com/richd0tcom/mammon.git
+   cd mammon
    ```
 
 2. Install dependencies:
@@ -167,41 +166,8 @@ THROTTLE_TTL=60
 THROTTLE_LIMIT=10
 ```
 
-## Development
+<!--## Development
 
-### Project Structure
-
-```
-src/
-├── common/         # Shared utilities, decorators, filters
-├── config/         # Configuration modules
-├── modules/
-│   ├── auth/       # Authentication and authorization
-│   ├── users/      # User management
-│   ├── wallets/    # Multi-currency wallet management
-│   ├── orders/     # Order processing and management
-│   ├── exchange/   # Exchange integration
-│   └── pricing/    # Real-time pricing service
-├── app.module.ts
-└── main.ts
-```
-
-### API Documentation
-
-API documentation is available at `/api/docs` when running the application in development mode.
-
-## Testing
-
-```bash
-# Unit tests
-npm run test
-
-# E2E tests
-npm run test:e2e
-
-# Test coverage
-npm run test:cov
-```
 
 ## Deployment
 
